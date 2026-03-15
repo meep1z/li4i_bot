@@ -62,6 +62,8 @@ ydl_opts = {
     "outtmpl": f"{TEMP_DIR}/%(title)s.%(ext)s",
     "quiet": True,
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+    "extractor_retries": 3,
+    "remote_components": "ejs:github",
 }
 
 
@@ -199,13 +201,9 @@ async def add_to_favorites(callback: types.CallbackQuery):
     title = "Без названия"
     artist = "Неизвестный"
 
-    if callback.message.caption:
-        lines = callback.message.caption.split("\n")
-        if lines:
-            title = lines[0].replace("*", "").strip()
-
     if callback.message.audio:
-        artist = callback.message.audio.performer or "Неизвестный"
+        title = callback.message.audio.title or title
+        artist = callback.message.audio.performer or artist
 
     user_id = str(callback.from_user.id)
     data = load_favorites()

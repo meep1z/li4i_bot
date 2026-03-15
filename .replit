@@ -4,7 +4,7 @@ expertMode = true
 
 [nix]
 channel = "stable-25_05"
-packages = ["ffmpeg", "ffmpeg-full"]
+packages = ["ffmpeg", "ffmpeg-full", "deno"]
 
 [workflows]
 runButton = "Project"
