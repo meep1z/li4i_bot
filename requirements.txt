@@ -4,3 +4,4 @@ ytmusicapi
 yt-dlp
 python-dotenv
 ffmpeg-python
+flask

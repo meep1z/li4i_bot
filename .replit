@@ -28,3 +28,12 @@ args = "python main.py"
 
 [workflows.workflow.metadata]
 outputType = "console"
+
+[deployment]
+build = ["sh", "-c", "pip install -r requirements.txt"]
+run = ["sh", "-c", "python main.py"]
+deploymentTarget = "cloudrun"
+
+[[ports]]
+localPort = 8080
+externalPort = 80
