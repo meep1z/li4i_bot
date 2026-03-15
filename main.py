@@ -31,6 +31,9 @@ def index():
     return "Бот работает!"
 
 
+TEMP_DIR = "temp"
+os.makedirs(TEMP_DIR, exist_ok=True)
+
 favorites_file = "favorites.json"
 
 
@@ -56,7 +59,7 @@ ydl_opts = {
             "preferredquality": "128",
         }
     ],
-    "outtmpl": "%(title)s.%(ext)s",
+    "outtmpl": f"{TEMP_DIR}/%(title)s.%(ext)s",
     "quiet": True,
     "user_agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
 }
@@ -139,7 +142,7 @@ async def download(callback: types.CallbackQuery):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = f"{info['title']}.mp3"
+            filename = f"{TEMP_DIR}/{info['title']}.mp3"
 
             audio = FSInputFile(filename)
             performer = info.get("artist") or info.get("uploader") or "Unknown"
@@ -207,7 +210,7 @@ async def play_from_favorites(callback: types.CallbackQuery):
 
         with yt_dlp.YoutubeDL(ydl_opts) as ydl:
             info = ydl.extract_info(url, download=True)
-            filename = f"{info['title']}.mp3"
+            filename = f"{TEMP_DIR}/{info['title']}.mp3"
 
             audio = FSInputFile(filename)
             performer = info.get("artist") or info.get("uploader") or "Unknown"
