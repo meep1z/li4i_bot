@@ -157,13 +157,15 @@ async def search(message: types.Message):
 
     # Length limit
     if len(message.text) > MAX_QUERY_LENGTH:
-        await message.answer(f"Запрос слишком длинный (максимум {MAX_QUERY_LENGTH} символов)")
+        await message.answer(
+            f"Запрос слишком длинный (максимум {MAX_QUERY_LENGTH} символов)"
+        )
         return
 
     # Easter egg — bypass busy check
     if "мистер робот" in message.text.lower():
         user_last_request[user_id] = time.time()
-        msg = await message.answer("🤖")
+        msg = await message.answer("услышал тебя родной")
         filename = None
         try:
             info, filename = await asyncio.get_event_loop().run_in_executor(
@@ -171,7 +173,9 @@ async def search(message: types.Message):
             )
             audio = FSInputFile(filename)
             performer = info.get("artist") or info.get("uploader") or "Unknown"
-            await message.answer_audio(audio=audio, title=info["title"][:100], performer=performer[:100])
+            await message.answer_audio(
+                audio=audio, title=info["title"][:100], performer=performer[:100]
+            )
             os.remove(filename)
             await msg.delete()
         except Exception as e:
@@ -222,7 +226,9 @@ async def download(callback: types.CallbackQuery):
         return
 
     if user_id in user_busy:
-        await callback.answer("Дождитесь завершения текущего скачивания", show_alert=True)
+        await callback.answer(
+            "Дождитесь завершения текущего скачивания", show_alert=True
+        )
         return
 
     user_busy.add(user_id)
@@ -295,7 +301,9 @@ async def play_from_favorites(callback: types.CallbackQuery):
     track_id = callback.data[5:]
 
     if user_id in user_busy:
-        await callback.answer("Дождитесь завершения текущего скачивания", show_alert=True)
+        await callback.answer(
+            "Дождитесь завершения текущего скачивания", show_alert=True
+        )
         return
 
     await callback.answer("Скачивание...")
