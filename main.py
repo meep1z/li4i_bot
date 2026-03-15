@@ -132,17 +132,24 @@ async def show_favorites(message: types.Message):
     )
 
 
+@dp.message(lambda m: not m.text)
+async def non_text(message: types.Message):
+    await message.answer("Отправьте текстовое сообщение с названием трека")
+
+
 @dp.message()
 async def search(message: types.Message):
     if "мистер робот" in message.text.lower():
-        msg = await message.answer("🤖")
+        msg = await message.answer("услышал тебя родной")
         try:
             info, filename = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: download_audio("x7dMc0KAeHo")
             )
             audio = FSInputFile(filename)
             performer = info.get("artist") or info.get("uploader") or "Unknown"
-            await message.answer_audio(audio=audio, title=info["title"][:100], performer=performer[:100])
+            await message.answer_audio(
+                audio=audio, title=info["title"][:100], performer=performer[:100]
+            )
             os.remove(filename)
             await msg.delete()
         except Exception as e:
@@ -306,6 +313,8 @@ async def main():
 
 if __name__ == "__main__":
     # Запускаем Flask в фоновом потоке
-    threading.Thread(target=lambda: app.run(host="0.0.0.0", port=8080), daemon=True).start()
+    threading.Thread(
+        target=lambda: app.run(host="0.0.0.0", port=8080), daemon=True
+    ).start()
     # Запускаем бота в основном потоке
     asyncio.run(main())
