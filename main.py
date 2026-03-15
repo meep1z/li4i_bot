@@ -134,6 +134,20 @@ async def show_favorites(message: types.Message):
 
 @dp.message()
 async def search(message: types.Message):
+    if "мистер робот" in message.text.lower():
+        msg = await message.answer("🤖")
+        try:
+            info, filename = await asyncio.get_event_loop().run_in_executor(
+                None, lambda: download_audio("x7dMc0KAeHo")
+            )
+            audio = FSInputFile(filename)
+            performer = info.get("artist") or info.get("uploader") or "Unknown"
+            await message.answer_audio(audio=audio, title=info["title"][:100], performer=performer[:100])
+            os.remove(filename)
+            await msg.delete()
+        except Exception as e:
+            await msg.edit_text(f"Ошибка: {str(e)[:100]}")
+        return
     msg = await message.answer("Поиск...")
     try:
         results = ytmusic.search(message.text, filter="songs", limit=5)
