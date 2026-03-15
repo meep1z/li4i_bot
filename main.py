@@ -65,6 +65,34 @@ ydl_opts = {
 }
 
 
+def download_audio(video_id, title=None, artist=None):
+    """Скачивает аудио с фолбэками: YT Music -> YouTube -> поиск по названию."""
+    urls = [
+        f"https://music.youtube.com/watch?v={video_id}",
+        f"https://www.youtube.com/watch?v={video_id}",
+    ]
+    if title and artist:
+        urls.append(f"ytsearch1:{title} {artist}")
+    elif title:
+        urls.append(f"ytsearch1:{title}")
+
+    last_error = None
+    for url in urls:
+        try:
+            with yt_dlp.YoutubeDL(ydl_opts) as ydl:
+                info = ydl.extract_info(url, download=True)
+                if "entries" in info:
+                    info = info["entries"][0]
+                filename = f"{TEMP_DIR}/{info['title']}.mp3"
+                return info, filename
+        except Exception as e:
+            last_error = e
+            logging.warning(f"Не удалось скачать с {url}: {e}")
+            continue
+
+    raise last_error
+
+
 @dp.message(Command("start"))
 async def start(message: types.Message):
     await message.answer("Отправь название трека для поиска\n/favorites - избранное")
@@ -138,29 +166,27 @@ async def download(callback: types.CallbackQuery):
     await callback.message.edit_text("Скачивание...")
 
     try:
-        url = f"https://music.youtube.com/watch?v={video_id}"
+        info, filename = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: download_audio(video_id)
+        )
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = f"{TEMP_DIR}/{info['title']}.mp3"
+        audio = FSInputFile(filename)
+        performer = info.get("artist") or info.get("uploader") or "Unknown"
 
-            audio = FSInputFile(filename)
-            performer = info.get("artist") or info.get("uploader") or "Unknown"
+        fav_button = InlineKeyboardButton(
+            text="➕ В избранное", callback_data=f"fav_{video_id}"
+        )
+        keyboard = InlineKeyboardMarkup(inline_keyboard=[[fav_button]])
 
-            fav_button = InlineKeyboardButton(
-                text="➕ В избранное", callback_data=f"fav_{video_id}"
-            )
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[fav_button]])
+        await callback.message.answer_audio(
+            audio=audio,
+            title=info["title"][:100],
+            performer=performer[:100],
+            reply_markup=keyboard,
+        )
 
-            await callback.message.answer_audio(
-                audio=audio,
-                title=info["title"][:100],
-                performer=performer[:100],
-                reply_markup=keyboard,
-            )
-
-            os.remove(filename)
-            await callback.message.delete()
+        os.remove(filename)
+        await callback.message.delete()
 
     except Exception as e:
         await callback.message.edit_text(f"Ошибка: {str(e)[:100]}")
@@ -205,21 +231,25 @@ async def play_from_favorites(callback: types.CallbackQuery):
     track_id = callback.data[5:]
     await callback.answer("Скачивание...")
 
+    user_id = str(callback.from_user.id)
+    data = load_favorites()
+    track_info = data.get(user_id, {}).get(track_id, {})
+    title = track_info.get("title")
+    artist = track_info.get("artist")
+
     try:
-        url = f"https://music.youtube.com/watch?v={track_id}"
+        info, filename = await asyncio.get_event_loop().run_in_executor(
+            None, lambda: download_audio(track_id, title=title, artist=artist)
+        )
 
-        with yt_dlp.YoutubeDL(ydl_opts) as ydl:
-            info = ydl.extract_info(url, download=True)
-            filename = f"{TEMP_DIR}/{info['title']}.mp3"
+        audio = FSInputFile(filename)
+        performer = info.get("artist") or info.get("uploader") or artist or "Unknown"
 
-            audio = FSInputFile(filename)
-            performer = info.get("artist") or info.get("uploader") or "Unknown"
+        await callback.message.answer_audio(
+            audio=audio, title=info["title"][:100], performer=performer[:100]
+        )
 
-            await callback.message.answer_audio(
-                audio=audio, title=info["title"][:100], performer=performer[:100]
-            )
-
-            os.remove(filename)
+        os.remove(filename)
 
     except Exception as e:
         await callback.message.answer(f"Ошибка: {str(e)[:100]}")
