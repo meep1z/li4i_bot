@@ -2,6 +2,7 @@ import os
 import asyncio
 import logging
 import json
+import time
 import yt_dlp
 from ytmusicapi import YTMusic
 from aiogram import Bot, Dispatcher, types
@@ -17,7 +18,6 @@ logging.basicConfig(level=logging.INFO)
 
 TOKEN = os.getenv("BOT_TOKEN")
 
-# Простая сессия без сложных таймаутов
 session = AiohttpSession()
 bot = Bot(token=TOKEN, session=session)
 dp = Dispatcher()
@@ -33,6 +33,12 @@ def index():
 
 TEMP_DIR = "temp"
 os.makedirs(TEMP_DIR, exist_ok=True)
+
+MAX_QUERY_LENGTH = 100
+RATE_LIMIT_SECONDS = 3
+
+user_busy: set = set()
+user_last_request: dict = {}
 
 favorites_file = "favorites.json"
 
@@ -139,22 +145,48 @@ async def non_text(message: types.Message):
 
 @dp.message()
 async def search(message: types.Message):
+    user_id = str(message.from_user.id)
+
+    # Rate limit
+    now = time.time()
+    last = user_last_request.get(user_id, 0)
+    if now - last < RATE_LIMIT_SECONDS:
+        wait = int(RATE_LIMIT_SECONDS - (now - last)) + 1
+        await message.answer(f"Подождите {wait} сек. перед следующим запросом")
+        return
+
+    # Length limit
+    if len(message.text) > MAX_QUERY_LENGTH:
+        await message.answer(f"Запрос слишком длинный (максимум {MAX_QUERY_LENGTH} символов)")
+        return
+
+    # Easter egg — bypass busy check
     if "мистер робот" in message.text.lower():
-        msg = await message.answer("услышал тебя родной")
+        user_last_request[user_id] = time.time()
+        msg = await message.answer("🤖")
+        filename = None
         try:
             info, filename = await asyncio.get_event_loop().run_in_executor(
                 None, lambda: download_audio("x7dMc0KAeHo")
             )
             audio = FSInputFile(filename)
             performer = info.get("artist") or info.get("uploader") or "Unknown"
-            await message.answer_audio(
-                audio=audio, title=info["title"][:100], performer=performer[:100]
-            )
+            await message.answer_audio(audio=audio, title=info["title"][:100], performer=performer[:100])
             os.remove(filename)
             await msg.delete()
         except Exception as e:
+            if filename and os.path.exists(filename):
+                os.remove(filename)
             await msg.edit_text(f"Ошибка: {str(e)[:100]}")
         return
+
+    # Busy check
+    if user_id in user_busy:
+        await message.answer("Дождитесь завершения текущего запроса")
+        return
+
+    user_busy.add(user_id)
+    user_last_request[user_id] = time.time()
     msg = await message.answer("Поиск...")
     try:
         results = ytmusic.search(message.text, filter="songs", limit=5)
@@ -176,18 +208,26 @@ async def search(message: types.Message):
         await msg.edit_text("Результаты:", reply_markup=keyboard)
     except Exception as e:
         await msg.edit_text(f"Ошибка: {str(e)[:100]}")
+    finally:
+        user_busy.discard(user_id)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("dl_"))
 async def download(callback: types.CallbackQuery):
+    user_id = str(callback.from_user.id)
     video_id = callback.data[3:]
 
     if len(video_id) < 10:
-        await callback.message.edit_text("Ошибка: неверный ID трека")
+        await callback.answer("Неверный ID трека", show_alert=True)
         return
 
-    await callback.message.edit_text("Скачивание...")
+    if user_id in user_busy:
+        await callback.answer("Дождитесь завершения текущего скачивания", show_alert=True)
+        return
 
+    user_busy.add(user_id)
+    await callback.message.edit_text("Скачивание...")
+    filename = None
     try:
         info, filename = await asyncio.get_event_loop().run_in_executor(
             None, lambda: download_audio(video_id)
@@ -212,7 +252,11 @@ async def download(callback: types.CallbackQuery):
         await callback.message.delete()
 
     except Exception as e:
+        if filename and os.path.exists(filename):
+            os.remove(filename)
         await callback.message.edit_text(f"Ошибка: {str(e)[:100]}")
+    finally:
+        user_busy.discard(user_id)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("fav_"))
@@ -247,15 +291,22 @@ async def add_to_favorites(callback: types.CallbackQuery):
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("play_"))
 async def play_from_favorites(callback: types.CallbackQuery):
-    track_id = callback.data[5:]
-    await callback.answer("Скачивание...")
-
     user_id = str(callback.from_user.id)
+    track_id = callback.data[5:]
+
+    if user_id in user_busy:
+        await callback.answer("Дождитесь завершения текущего скачивания", show_alert=True)
+        return
+
+    await callback.answer("Скачивание...")
+    user_busy.add(user_id)
+
     data = load_favorites()
     track_info = data.get(user_id, {}).get(track_id, {})
     title = track_info.get("title")
     artist = track_info.get("artist")
 
+    filename = None
     try:
         info, filename = await asyncio.get_event_loop().run_in_executor(
             None, lambda: download_audio(track_id, title=title, artist=artist)
@@ -271,9 +322,11 @@ async def play_from_favorites(callback: types.CallbackQuery):
         os.remove(filename)
 
     except Exception as e:
+        if filename and os.path.exists(filename):
+            os.remove(filename)
         await callback.message.answer(f"Ошибка: {str(e)[:100]}")
-
-    await callback.answer()
+    finally:
+        user_busy.discard(user_id)
 
 
 @dp.callback_query(lambda c: c.data and c.data.startswith("del_"))
