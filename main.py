@@ -7,7 +7,10 @@ import yt_dlp
 from ytmusicapi import YTMusic
 from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
-from aiogram.types import FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup
+from aiogram.types import (
+    FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup,
+    InlineQuery, InlineQueryResultArticle, InputTextMessageContent,
+)
 from aiogram.client.session.aiohttp import AiohttpSession
 from flask import Flask
 import threading
@@ -136,6 +139,52 @@ async def show_favorites(message: types.Message):
     await message.answer(
         text, reply_markup=InlineKeyboardMarkup(inline_keyboard=buttons)
     )
+
+
+@dp.inline_query()
+async def inline_search(inline_query: InlineQuery):
+    query = inline_query.query.strip()
+
+    if not query or len(query) > MAX_QUERY_LENGTH:
+        await inline_query.answer([], cache_time=1)
+        return
+
+    try:
+        results_raw = ytmusic.search(query, filter="songs", limit=7)
+        results = []
+
+        for t in results_raw:
+            artist = t["artists"][0]["name"] if t.get("artists") else "Unknown"
+            title = t["title"]
+            video_id = t.get("videoId")
+            if not video_id:
+                continue
+            duration = t.get("duration", "")
+            description = artist + (f" • {duration}" if duration else "")
+
+            download_btn = InlineKeyboardButton(
+                text="⬇️ Скачать", callback_data=f"dl_{video_id}"
+            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[download_btn]])
+
+            results.append(
+                InlineQueryResultArticle(
+                    id=video_id,
+                    title=title,
+                    description=description,
+                    input_message_content=InputTextMessageContent(
+                        message_text=f"🎵 <b>{title}</b> — {artist}",
+                        parse_mode="HTML",
+                    ),
+                    reply_markup=keyboard,
+                )
+            )
+
+        await inline_query.answer(results, cache_time=30, is_personal=True)
+
+    except Exception as e:
+        logging.error(f"Inline search error: {e}")
+        await inline_query.answer([], cache_time=1)
 
 
 @dp.message(lambda m: not m.text)
