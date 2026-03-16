@@ -13,14 +13,17 @@ from downloader import download_audio
 router = Router()
 
 
-async def send_favorites_list(target: types.Message, user_id: str):
-    """Отправляет (или редактирует) список избранного."""
+async def send_favorites_list(target: types.Message, user_id: str, edit: bool = False):
+    """Отправляет или редактирует список избранного.
+    edit=True — редактировать существующее сообщение бота (из callback).
+    edit=False — отправить новое сообщение (из команды).
+    """
     data = load_favorites()
     user_favs = data.get(user_id, {})
 
     if not user_favs:
         text = "Избранное пусто"
-        if hasattr(target, "edit_text"):
+        if edit:
             await target.edit_text(text)
         else:
             await target.answer(text)
@@ -42,7 +45,7 @@ async def send_favorites_list(target: types.Message, user_id: str):
 
     keyboard = InlineKeyboardMarkup(inline_keyboard=buttons)
 
-    if hasattr(target, "edit_text"):
+    if edit:
         await target.edit_text(text, reply_markup=keyboard)
     else:
         await target.answer(text, reply_markup=keyboard)
@@ -137,7 +140,7 @@ async def delete_from_favorites(callback: types.CallbackQuery):
         save_favorites(data)
         await callback.answer("Удалено")
 
-    await send_favorites_list(callback.message, user_id)
+    await send_favorites_list(callback.message, user_id, edit=True)
 
 
 @router.callback_query(lambda c: c.data == "clear_all")

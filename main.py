@@ -5,6 +5,7 @@ from flask import Flask
 
 from config import bot, dp
 from handlers import commands, inline, download, favorites, search
+import keep_alive
 
 app = Flask(__name__)
 
@@ -32,4 +33,5 @@ if __name__ == "__main__":
         target=lambda: app.run(host="0.0.0.0", port=8080),
         daemon=True,
     ).start()
+    keep_alive.start()
     asyncio.run(main())
