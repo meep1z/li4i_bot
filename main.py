@@ -313,8 +313,22 @@ async def download(callback: types.CallbackQuery):
         return
 
     user_busy.add(user_id)
-    await callback.message.edit_text("Скачивание...")
+    is_inline = callback.message is None
     filename = None
+
+    # Уведомляем о начале скачивания
+    if is_inline:
+        await callback.answer("Скачивание — трек придёт в личку...")
+        try:
+            await bot.edit_message_text(
+                text="⏳ Скачивание...",
+                inline_message_id=callback.inline_message_id,
+            )
+        except Exception:
+            pass
+    else:
+        await callback.message.edit_text("Скачивание...")
+
     try:
         info, filename = await asyncio.get_event_loop().run_in_executor(
             None, lambda: download_audio(video_id)
@@ -322,30 +336,58 @@ async def download(callback: types.CallbackQuery):
 
         audio = FSInputFile(filename)
         performer = info.get("artist") or info.get("uploader") or "Unknown"
+        title_str = info["title"][:100]
 
-        fav_button = InlineKeyboardButton(
-            text="➕ В избранное", callback_data=f"fav_{video_id}"
-        )
-        keyboard = InlineKeyboardMarkup(inline_keyboard=[[fav_button]])
+        if is_inline:
+            # Инлайн-контекст: отправляем в личку и кешируем
+            sent = await bot.send_audio(
+                chat_id=callback.from_user.id,
+                audio=audio,
+                title=title_str,
+                performer=performer,
+            )
+            if sent.audio:
+                cache_file_id(video_id, sent.audio.file_id)
+            try:
+                await bot.edit_message_text(
+                    text=f"✅ <b>{title_str}</b> — {performer}\nОтправлено в личный чат",
+                    inline_message_id=callback.inline_message_id,
+                    parse_mode="HTML",
+                )
+            except Exception:
+                pass
+        else:
+            fav_button = InlineKeyboardButton(
+                text="➕ В избранное", callback_data=f"fav_{video_id}"
+            )
+            keyboard = InlineKeyboardMarkup(inline_keyboard=[[fav_button]])
 
-        sent = await callback.message.answer_audio(
-            audio=audio,
-            title=info["title"][:100],
-            performer=performer[:100],
-            reply_markup=keyboard,
-        )
+            sent = await callback.message.answer_audio(
+                audio=audio,
+                title=title_str,
+                performer=performer,
+                reply_markup=keyboard,
+            )
+            if sent.audio:
+                cache_file_id(video_id, sent.audio.file_id)
 
-        # Кешируем file_id для инлайн-режима
-        if sent.audio:
-            cache_file_id(video_id, sent.audio.file_id)
+            await callback.message.delete()
 
         os.remove(filename)
-        await callback.message.delete()
 
     except Exception as e:
         if filename and os.path.exists(filename):
             os.remove(filename)
-        await callback.message.edit_text(f"Ошибка: {str(e)[:100]}")
+        if is_inline:
+            try:
+                await bot.edit_message_text(
+                    text=f"❌ Ошибка: {str(e)[:100]}",
+                    inline_message_id=callback.inline_message_id,
+                )
+            except Exception:
+                pass
+        else:
+            await callback.message.edit_text(f"Ошибка: {str(e)[:100]}")
     finally:
         user_busy.discard(user_id)
 
