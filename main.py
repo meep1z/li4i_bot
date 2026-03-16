@@ -10,7 +10,7 @@ from aiogram.filters import Command
 from aiogram.types import (
     FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup,
     InlineQuery, InlineQueryResultArticle, InlineQueryResultCachedAudio,
-    InputTextMessageContent,
+    InputMediaAudio, InputTextMessageContent,
 )
 from aiogram.client.session.aiohttp import AiohttpSession
 from flask import Flask
@@ -339,23 +339,53 @@ async def download(callback: types.CallbackQuery):
         title_str = info["title"][:100]
 
         if is_inline:
-            # Инлайн-контекст: отправляем в личку и кешируем
-            sent = await bot.send_audio(
+            # Тихо отправляем в личку, чтобы получить file_id
+            dm_msg = await bot.send_audio(
                 chat_id=callback.from_user.id,
                 audio=audio,
                 title=title_str,
                 performer=performer,
+                disable_notification=True,
             )
-            if sent.audio:
-                cache_file_id(video_id, sent.audio.file_id)
-            try:
-                await bot.edit_message_text(
-                    text=f"✅ <b>{title_str}</b> — {performer}\nОтправлено в личный чат",
-                    inline_message_id=callback.inline_message_id,
-                    parse_mode="HTML",
-                )
-            except Exception:
-                pass
+            file_id = dm_msg.audio.file_id if dm_msg.audio else None
+            if file_id:
+                cache_file_id(video_id, file_id)
+
+            # Заменяем инлайн-сообщение на аудио прямо в том чате
+            inline_ok = False
+            if file_id:
+                try:
+                    await bot.edit_message_media(
+                        media=InputMediaAudio(
+                            media=file_id,
+                            title=title_str,
+                            performer=performer,
+                        ),
+                        inline_message_id=callback.inline_message_id,
+                    )
+                    inline_ok = True
+                except Exception as e:
+                    logging.warning(f"edit_message_media failed: {e}")
+
+            if inline_ok:
+                # Удаляем лишнее сообщение из лички
+                try:
+                    await bot.delete_message(
+                        chat_id=callback.from_user.id,
+                        message_id=dm_msg.message_id,
+                    )
+                except Exception:
+                    pass
+            else:
+                # Fallback: аудио остаётся в личке
+                try:
+                    await bot.edit_message_text(
+                        text=f"✅ <b>{title_str}</b> — {performer}\n(отправлено в личку)",
+                        inline_message_id=callback.inline_message_id,
+                        parse_mode="HTML",
+                    )
+                except Exception:
+                    pass
         else:
             fav_button = InlineKeyboardButton(
                 text="➕ В избранное", callback_data=f"fav_{video_id}"
