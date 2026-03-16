@@ -14,6 +14,6 @@ def _ping_loop(url: str, interval: int):
         time.sleep(interval)
 
 
-def start(url: str = "http://localhost:8080/", interval: int = 240):
+def start(url: str = "http://localhost:8080/", interval: int = 60):
     t = threading.Thread(target=_ping_loop, args=(url, interval), daemon=True)
     t.start()
