@@ -9,7 +9,8 @@ from aiogram import Bot, Dispatcher, types
 from aiogram.filters import Command
 from aiogram.types import (
     FSInputFile, InlineKeyboardButton, InlineKeyboardMarkup,
-    InlineQuery, InlineQueryResultArticle, InputTextMessageContent,
+    InlineQuery, InlineQueryResultArticle, InlineQueryResultCachedAudio,
+    InputTextMessageContent,
 )
 from aiogram.client.session.aiohttp import AiohttpSession
 from flask import Flask
@@ -44,6 +45,7 @@ user_busy: set = set()
 user_last_request: dict = {}
 
 favorites_file = "favorites.json"
+file_id_cache_file = "file_id_cache.json"
 
 
 def load_favorites():
@@ -57,6 +59,25 @@ def load_favorites():
 def save_favorites(data):
     with open(favorites_file, "w") as f:
         json.dump(data, f)
+
+
+def load_file_id_cache():
+    try:
+        with open(file_id_cache_file, "r") as f:
+            return json.load(f)
+    except:
+        return {}
+
+
+def save_file_id_cache(data):
+    with open(file_id_cache_file, "w") as f:
+        json.dump(data, f)
+
+
+def cache_file_id(video_id: str, file_id: str):
+    data = load_file_id_cache()
+    data[video_id] = file_id
+    save_file_id_cache(data)
 
 
 ydl_opts = {
@@ -151,6 +172,7 @@ async def inline_search(inline_query: InlineQuery):
 
     try:
         results_raw = ytmusic.search(query, filter="songs", limit=7)
+        file_ids = load_file_id_cache()
         results = []
 
         for t in results_raw:
@@ -162,23 +184,33 @@ async def inline_search(inline_query: InlineQuery):
             duration = t.get("duration", "")
             description = artist + (f" • {duration}" if duration else "")
 
-            download_btn = InlineKeyboardButton(
-                text="⬇️ Скачать", callback_data=f"dl_{video_id}"
-            )
-            keyboard = InlineKeyboardMarkup(inline_keyboard=[[download_btn]])
-
-            results.append(
-                InlineQueryResultArticle(
-                    id=video_id,
-                    title=title,
-                    description=description,
-                    input_message_content=InputTextMessageContent(
-                        message_text=f"🎵 <b>{title}</b> — {artist}",
-                        parse_mode="HTML",
-                    ),
-                    reply_markup=keyboard,
+            cached_file_id = file_ids.get(video_id)
+            if cached_file_id:
+                # Трек уже скачивался — отправляем сразу как аудио
+                results.append(
+                    InlineQueryResultCachedAudio(
+                        id=video_id,
+                        audio_file_id=cached_file_id,
+                    )
                 )
-            )
+            else:
+                # Новый трек — статья с кнопкой скачать (один раз)
+                download_btn = InlineKeyboardButton(
+                    text="⬇️ Скачать", callback_data=f"dl_{video_id}"
+                )
+                keyboard = InlineKeyboardMarkup(inline_keyboard=[[download_btn]])
+                results.append(
+                    InlineQueryResultArticle(
+                        id=video_id,
+                        title=title,
+                        description=description,
+                        input_message_content=InputTextMessageContent(
+                            message_text=f"🎵 <b>{title}</b> — {artist}",
+                            parse_mode="HTML",
+                        ),
+                        reply_markup=keyboard,
+                    )
+                )
 
         await inline_query.answer(results, cache_time=30, is_personal=True)
 
@@ -296,12 +328,16 @@ async def download(callback: types.CallbackQuery):
         )
         keyboard = InlineKeyboardMarkup(inline_keyboard=[[fav_button]])
 
-        await callback.message.answer_audio(
+        sent = await callback.message.answer_audio(
             audio=audio,
             title=info["title"][:100],
             performer=performer[:100],
             reply_markup=keyboard,
         )
+
+        # Кешируем file_id для инлайн-режима
+        if sent.audio:
+            cache_file_id(video_id, sent.audio.file_id)
 
         os.remove(filename)
         await callback.message.delete()
@@ -372,9 +408,13 @@ async def play_from_favorites(callback: types.CallbackQuery):
         audio = FSInputFile(filename)
         performer = info.get("artist") or info.get("uploader") or artist or "Unknown"
 
-        await callback.message.answer_audio(
+        sent = await callback.message.answer_audio(
             audio=audio, title=info["title"][:100], performer=performer[:100]
         )
+
+        # Кешируем file_id для инлайн-режима
+        if sent.audio:
+            cache_file_id(track_id, sent.audio.file_id)
 
         os.remove(filename)
 

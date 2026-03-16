@@ -5,3 +5,4 @@ __pycache__/
 .pythonlibs/
 MVP dont delete.py
 favorites.json
+file_id_cache.json
