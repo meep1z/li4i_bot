@@ -1,4 +1,4 @@
-# 🎵 Telegram Music Bot (@meep1z_music_bot)
+# 🎵 Telegram Music Bot
 
 A Telegram bot for searching and downloading music from YouTube Music. Supports inline mode with instant audio delivery via file_id caching, personal favorites, and security features.
 
